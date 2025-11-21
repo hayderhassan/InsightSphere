@@ -41,7 +41,7 @@ export function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border/40 bg-gradient-to-r from-indigo-950/80 via-slate-950/80 to-purple-950/80 backdrop-blur text-foreground">
+    <header className="sticky top-0 z-30 border-b border-border/40 bg-gradient-to-r from-purple-950 via-slate-800 to-purple-950 backdrop-blur text-foreground">
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
         {/* Brand */}
         <div className="flex items-center gap-2">
