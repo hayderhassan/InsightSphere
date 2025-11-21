@@ -1,0 +1,206 @@
+# -------------------------
+# OS / Editor junk
+# -------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+*.lock
+
+# -------------------------
+# Go
+# -------------------------
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+go.work
+go.work.sum
+# vendor/
+
+# -------------------------
+# Node.js / Next.js / React Native
+# -------------------------
+node_modules/
+.pnp/
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+coverage/
+.next/
+.out/
+build/
+dist/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+.expo/
+.expo-shared/
+
+# -------------------------
+# Python (Django, FastAPI, CLI)
+# -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+*.mo
+*.pot
+*.log
+local_settings.py
+db.sqlite3*
+instance/
+.webassets-cache
+.scrapy
+docs/_build/
+.pybuilder/
+target/
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+celerybeat-schedule
+celerybeat.pid
+*.rdb
+*.aof
+*.pid
+mnesia/
+rabbitmq/
+rabbitmq-data/
+activemq-data/
+*.sage.py
+.env
+.env.*
+.envrc
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.spyderproject
+.spyproject
+.ropeproject
+/site
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+.abstra/
+.ruff_cache/
+.pypirc
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+.streamlit/secrets.toml
+
+# -------------------------
+# R (plumber service)
+# -------------------------
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+.Ruserdata
+*-Ex.R
+/*.tar.gz
+/*.Rcheck/
+.Rproj.user/
+vignettes/*.html
+vignettes/*.pdf
+.httr-oauth
+*_cache/
+/cache/
+*.utf8.md
+*.knit.md
+.Renviron
+docs/
+po/*~
+rsconnect/
+
+# -------------------------
+# Rust
+# -------------------------
+target/
+*.rs.bk
+
+# -------------------------
+# Terraform / Infra
+# -------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.tfstate.lock.info
+.terraformrc
+terraform.rc
+# *.dot
+# planout
+
+# -------------------------
+# Misc / Secrets
+# -------------------------
+*.pem
+*.key
+*.crt
+*.der
+*.p12
+*.jks
+*.keystore
+*.secret
+*.token
+*.config
