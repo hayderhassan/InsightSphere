@@ -47,6 +47,7 @@ dist/
 next-env.d.ts
 .expo/
 .expo-shared/
+package-lock.json
 
 # -------------------------
 # Python (Django, FastAPI, CLI)

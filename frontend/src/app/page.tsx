@@ -1,25 +1,32 @@
-async function getHealth() {
-  const res = await fetch("http://localhost:8000/api/health/", {
-    // for dev only, no auth/cards yet
-    next: { revalidate: 0 },
-  });
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
 
-  if (!res.ok) {
-    throw new Error("Failed to fetch health");
-  }
-
-  return res.json();
-}
-
-export default async function Home() {
-  const health = await getHealth();
-
+export default function Home() {
   return (
-    <main className="min-h-screen flex items-center justify-center">
-      <div className="p-6 rounded-lg border">
-        <h1 className="text-2xl font-bold mb-2">InsightSphere</h1>
-        <p>Backend status: {health.status}</p>
-      </div>
+    <main className="min-h-screen flex items-center justify-center bg-muted">
+      <Card className="max-w-md">
+        <CardHeader>
+          <CardTitle>InsightSphere</CardTitle>
+          <CardDescription>
+            Your end-to-end analytics playground. Start by logging in.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-3">
+          <Link href="/login">
+            <Button>Go to login</Button>
+          </Link>
+          <Link href="/dashboard">
+            <Button variant="outline">Dashboard</Button>
+          </Link>
+        </CardContent>
+      </Card>
     </main>
   );
 }
