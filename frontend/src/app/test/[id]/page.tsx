@@ -64,17 +64,17 @@ export default function DatasetDetailPage() {
     loadDataset();
 
     // Poll for status + analysis updates
-    const interval = setInterval(() => {
-      apiFetch(`/datasets/${datasetId}/`)
-        .then((data) => {
-          setDataset(data as Dataset);
-        })
-        .catch(() => {
-          // ignore polling errors
-        });
-    }, 3000);
+    // const interval = setInterval(() => {
+    //   apiFetch(`/datasets/${datasetId}/`)
+    //     .then((data) => {
+    //       setDataset(data as Dataset);
+    //     })
+    //     .catch(() => {
+    //       // ignore polling errors
+    //     });
+    // }, 3000);
 
-    return () => clearInterval(interval);
+    // return () => clearInterval(interval);
   }, [router, datasetId]);
 
   async function handleDelete(): Promise<void> {
@@ -369,6 +369,7 @@ export default function DatasetDetailPage() {
             <div className="grid gap-4 md:grid-cols-2">
               {categoricalColumns.map(([name, col]) => {
                 const valueCounts = col.value_counts ?? [];
+                console.log("test", name, col, valueCounts);
                 return (
                   <Card
                     key={name}

@@ -13,75 +13,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { Clock, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-
-type MeResponse = {
-  id: number;
-  username: string;
-  email: string;
-};
-
-type AnalysisResult = {
-  status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-  summary_json?: any;
-  created_at: string;
-  error_message?: string | null;
-};
-
-type Dataset = {
-  id: number;
-  name: string;
-  original_file: string;
-  uploaded_at: string;
-  analysis?: AnalysisResult | null;
-};
-
-function getStatusBadgeProps(status: AnalysisResult["status"] | undefined) {
-  const normalized: AnalysisResult["status"] = status ?? "PENDING";
-
-  switch (normalized) {
-    case "PENDING":
-      return {
-        label: "Pending",
-        icon: Clock,
-        className: "bg-amber-100 text-amber-800 border border-amber-200",
-      };
-    case "RUNNING":
-      return {
-        label: "Running",
-        icon: Loader2,
-        className: "bg-sky-100 text-sky-800 border border-sky-200",
-        spinning: true,
-      };
-    case "COMPLETED":
-      return {
-        label: "Completed",
-        icon: CheckCircle2,
-        className: "bg-emerald-100 text-emerald-800 border border-emerald-200",
-      };
-    case "FAILED":
-    default:
-      return {
-        label: "Failed",
-        icon: AlertCircle,
-        className: "bg-red-100 text-red-800 border border-red-200",
-      };
-  }
-}
+import { StatusBadge } from "@/components/StatusBadge";
+import type { User } from "@/types/user";
+import type { Dataset } from "@/types/dataset";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [me, setMe] = useState<MeResponse | null>(null);
-  const [loadingMe, setLoadingMe] = useState(true);
+  const [me, setMe] = useState<User | null>(null);
+  const [loadingMe, setLoadingMe] = useState<boolean>(true);
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [loadingDatasets, setLoadingDatasets] = useState(true);
+  const [loadingDatasets, setLoadingDatasets] = useState<boolean>(true);
 
-  const [uploadName, setUploadName] = useState("");
+  const [uploadName, setUploadName] = useState<string>("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploading, setUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -93,15 +40,15 @@ export default function DashboardPage() {
       return;
     }
 
-    async function loadMeAndDatasets() {
+    async function loadMeAndDatasets(): Promise<void> {
       try {
         const [meData, datasetsData] = await Promise.all([
           apiFetch("/auth/me/"),
           apiFetch("/datasets/"),
         ]);
 
-        setMe(meData);
-        setDatasets(datasetsData);
+        setMe(meData as User);
+        setDatasets(datasetsData as Dataset[]);
       } catch {
         router.replace("/login");
       } finally {
@@ -119,14 +66,16 @@ export default function DashboardPage() {
 
     const hasInProgress = datasets.some((ds) => {
       const status = ds.analysis?.status;
-      return !status || status === "PENDING" || status === "RUNNING";
+      return (
+        status === undefined || status === "PENDING" || status === "RUNNING"
+      );
     });
 
     if (!hasInProgress) return;
 
     const interval = setInterval(async () => {
       try {
-        const updated: Dataset[] = await apiFetch("/datasets/");
+        const updated = (await apiFetch("/datasets/")) as Dataset[];
         setDatasets(updated);
       } catch {
         // ignore polling errors for now
@@ -136,19 +85,12 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [datasets, loadingDatasets]);
 
-  function handleLogout() {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("accessToken");
-    }
-    router.replace("/login");
-  }
-
-  function triggerFilePicker() {
+  function triggerFilePicker(): void {
     fileInputRef.current?.click();
   }
 
-  function onFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] || null;
+  function onFileChange(e: ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0] ?? null;
     setUploadFile(file);
 
     if (file) {
@@ -161,7 +103,7 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleUpload(e: FormEvent) {
+  async function handleUpload(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     setUploadError(null);
 
@@ -201,7 +143,7 @@ export default function DashboardPage() {
         return;
       }
 
-      const newDataset: Dataset = await res.json();
+      const newDataset = (await res.json()) as Dataset;
       setDatasets((prev) => [newDataset, ...prev]);
       setUploadFile(null);
       setUploadName("");
@@ -214,17 +156,17 @@ export default function DashboardPage() {
 
   if (loadingMe) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-      </main>
+      </div>
     );
   }
 
   if (!me) return null;
 
   return (
-    <main className="min-h-screen bg-muted p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-[calc(100vh-4rem)] bg-background">
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
         {/* Header */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -232,32 +174,23 @@ export default function DashboardPage() {
               InsightSphere Dashboard
             </h1>
             <p className="text-sm text-muted-foreground">
-              Upload datasets and view basic analysis results.
+              Upload datasets and view automated profiling results.
             </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {me.username}
-              {me.email ? ` · ${me.email}` : ""}
-            </span>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Log out
-            </Button>
           </div>
         </div>
 
         {/* Upload card */}
-        <Card>
+        <Card className="bg-card border-border/70 shadow-md">
           <CardHeader>
             <CardTitle>Upload a dataset</CardTitle>
             <CardDescription>
-              Start with a CSV file. The backend will run a simple analysis
+              Start with a CSV file. The backend will run a profiling task
               asynchronously.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {uploadError && (
-              <p className="mb-3 text-xs text-red-600">{uploadError}</p>
+              <p className="mb-3 text-xs text-red-500">{uploadError}</p>
             )}
             <form className="space-y-4" onSubmit={handleUpload}>
               <div className="space-y-2">
@@ -304,11 +237,11 @@ export default function DashboardPage() {
         </Card>
 
         {/* Datasets list */}
-        <Card>
+        <Card className="bg-card border-border/70 shadow-md">
           <CardHeader>
             <CardTitle>Your datasets</CardTitle>
             <CardDescription>
-              Click a dataset to view its analysis details.
+              Click a dataset to view its analysis details and charts.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -322,40 +255,28 @@ export default function DashboardPage() {
               </p>
             ) : (
               <div className="space-y-2">
-                {datasets.map((ds) => {
-                  const props = getStatusBadgeProps(ds.analysis?.status);
-                  const Icon = props.icon;
-
-                  return (
-                    <Link
-                      key={ds.id}
-                      href={`/datasets/${ds.id}`}
-                      className="block rounded-md border bg-background px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{ds.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Uploaded {new Date(ds.uploaded_at).toLocaleString()}
-                          </p>
-                        </div>
-                        <Badge className={props.className}>
-                          <Icon
-                            className={`mr-1 h-3 w-3 ${
-                              props.spinning ? "animate-spin" : ""
-                            }`}
-                          />
-                          {props.label}
-                        </Badge>
+                {datasets.map((ds) => (
+                  <Link
+                    key={ds.id}
+                    href={`/datasets/${ds.id}`}
+                    className="block rounded-lg border border-border/70 bg-background px-3 py-2 text-sm hover:border-primary/60 hover:bg-accent/40 hover:text-accent-foreground transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-foreground">{ds.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Uploaded {new Date(ds.uploaded_at).toLocaleString()}
+                        </p>
                       </div>
-                    </Link>
-                  );
-                })}
+                      <StatusBadge status={ds.analysis?.status ?? undefined} />
+                    </div>
+                  </Link>
+                ))}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-    </main>
+    </div>
   );
 }

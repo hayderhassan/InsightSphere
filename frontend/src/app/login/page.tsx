@@ -17,12 +17,12 @@ import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -40,11 +40,16 @@ export default function LoginPage() {
         return;
       }
 
-      const data = await res.json();
+      const data: { access: string } = await res.json();
       setAccessToken(data.access);
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("currentUsername", username);
+      }
+
       router.push("/dashboard");
     } catch (err) {
-      console.log("Error logging in:", err);
+      console.error("Error logging in:", err);
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
@@ -52,16 +57,18 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-muted">
-      <Card className="w-full max-w-sm">
+    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
+      <Card className="w-full max-w-sm bg-card border-border/70 shadow-lg">
         <CardHeader>
-          <CardTitle>Sign in</CardTitle>
-          <CardDescription>
-            Use your InsightSphere account (Django user for now).
+          <CardTitle className="text-xl font-semibold">
+            Sign in to InsightSphere
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Use your Django user credentials for now.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {error && <p className="mb-3 text-xs text-red-600">{error}</p>}
+          {error && <p className="mb-3 text-xs text-red-500">{error}</p>}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -71,6 +78,7 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
+                placeholder="your.username"
               />
             </div>
 
@@ -82,6 +90,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
+                placeholder="••••••••"
               />
             </div>
 
@@ -91,9 +100,114 @@ export default function LoginPage() {
           </form>
         </CardContent>
         <CardFooter className="text-xs text-muted-foreground">
-          For now, use the Django superuser you created.
+          Use the Django superuser (or any user you’ve created) to log in.
         </CardFooter>
       </Card>
-    </main>
+    </div>
   );
 }
+
+//
+// "use client";
+
+// import { FormEvent, useState } from "react";
+// import { useRouter } from "next/navigation";
+// import { API_BASE_URL, setAccessToken } from "@/lib/api";
+// import {
+//   Card,
+//   CardHeader,
+//   CardTitle,
+//   CardDescription,
+//   CardContent,
+//   CardFooter,
+// } from "@/components/ui/card";
+// import { Label } from "@/components/ui/label";
+// import { Input } from "@/components/ui/input";
+// import { Button } from "@/components/ui/button";
+
+// export default function LoginPage() {
+//   const router = useRouter();
+//   const [username, setUsername] = useState<string>("");
+//   const [password, setPassword] = useState<string>("");
+//   const [error, setError] = useState<string | null>(null);
+//   const [loading, setLoading] = useState<boolean>(false);
+
+//   async function handleSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
+//     e.preventDefault();
+//     setError(null);
+//     setLoading(true);
+
+//     try {
+//       const res = await fetch(`${API_BASE_URL}/auth/token/`, {
+//         method: "POST",
+//         headers: { "Content-Type": "application/json" },
+//         body: JSON.stringify({ username, password }),
+//       });
+
+//       if (!res.ok) {
+//         setError("Invalid username or password");
+//         setLoading(false);
+//         return;
+//       }
+
+//       const data: { access: string } = await res.json();
+//       setAccessToken(data.access);
+//       router.push("/dashboard");
+//     } catch (err) {
+//       console.error("Error logging in:", err);
+//       setError("Something went wrong. Please try again.");
+//     } finally {
+//       setLoading(false);
+//     }
+//   }
+
+//   return (
+//     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
+//       <Card className="w-full max-w-sm bg-card/90 backdrop-blur border-border/70 shadow-lg">
+//         <CardHeader>
+//           <CardTitle className="text-xl font-semibold">
+//             Sign in to InsightSphere
+//           </CardTitle>
+//           <CardDescription className="text-xs">
+//             Use your Django user credentials for now.
+//           </CardDescription>
+//         </CardHeader>
+//         <CardContent>
+//           {error && <p className="mb-3 text-xs text-red-500">{error}</p>}
+
+//           <form onSubmit={handleSubmit} className="space-y-4">
+//             <div className="space-y-2">
+//               <Label htmlFor="username">Username</Label>
+//               <Input
+//                 id="username"
+//                 value={username}
+//                 onChange={(e) => setUsername(e.target.value)}
+//                 autoComplete="username"
+//                 placeholder="your.username"
+//               />
+//             </div>
+
+//             <div className="space-y-2">
+//               <Label htmlFor="password">Password</Label>
+//               <Input
+//                 id="password"
+//                 type="password"
+//                 value={password}
+//                 onChange={(e) => setPassword(e.target.value)}
+//                 autoComplete="current-password"
+//                 placeholder="••••••••"
+//               />
+//             </div>
+
+//             <Button type="submit" className="w-full" disabled={loading}>
+//               {loading ? "Signing in..." : "Sign in"}
+//             </Button>
+//           </form>
+//         </CardContent>
+//         <CardFooter className="text-xs text-muted-foreground">
+//           Use the Django superuser (or any user you’ve created) to log in.
+//         </CardFooter>
+//       </Card>
+//     </div>
+//   );
+// }
