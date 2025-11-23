@@ -1,7 +1,0 @@
-student_id,name,subject,score,passed
-1,,Math,88,True
-2,Bob,Math,72,True
-3,Charlie,Science,95,True
-4,Diana,History,,True
-5,Ethan,Science,58,False
-6,Farah,Math,91,True
