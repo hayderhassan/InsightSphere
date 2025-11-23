@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { apiFetch, getAccessToken, API_BASE_URL } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -36,12 +36,6 @@ export default function DatasetDetailPage() {
   const [semanticEditorOpen, setSemanticEditorOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
     if (!datasetId) {
       setLoadError("Missing dataset id");
       setLoading(false);
@@ -59,7 +53,7 @@ export default function DatasetDetailPage() {
       }
     }
 
-    loadDataset();
+    void loadDataset();
 
     const interval = setInterval(() => {
       if (semanticEditorOpen) return; // don't clobber local edits
@@ -79,27 +73,12 @@ export default function DatasetDetailPage() {
   async function handleDelete(): Promise<void> {
     if (!datasetId) return;
 
-    const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
     setDeleting(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/datasets/${datasetId}/`, {
+      await apiFetch(`/datasets/${datasetId}/`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
-
-      if (!res.ok && res.status !== 204) {
-        console.error("Delete failed:", res.status);
-        setDeleting(false);
-        return;
-      }
 
       router.replace("/dashboard");
     } catch (err) {
@@ -116,27 +95,16 @@ export default function DatasetDetailPage() {
   }): Promise<void> {
     if (!dataset) return;
 
-    const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
-    const res = await fetch(
-      `${API_BASE_URL}/datasets/${dataset.id}/semantic-config/`,
-      {
+    try {
+      await apiFetch(`/datasets/${dataset.id}/semantic-config/`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-      },
-    );
-
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("Semantic config save error:", text);
+      });
+    } catch (err) {
+      console.error("Semantic config save error:", err);
       return;
     }
 
@@ -164,13 +132,11 @@ export default function DatasetDetailPage() {
   const missingValuesData = Object.entries(missingValues).map(
     ([col, count]) => ({
       column: col,
-      count: count,
+      count: count as number,
     }),
   );
   const columns = summaryJson?.columns ?? {};
   const columnEntries = Object.entries<ColumnSummary>(columns);
-  const totalColumns = summaryJson?.column_count ?? columnEntries.length;
-  const rowCount = summaryJson?.row_count ?? 0;
 
   const semantic: SemanticConfig | null = summaryJson?.semantic_config ?? null;
 
@@ -218,11 +184,7 @@ export default function DatasetDetailPage() {
         <SmartInsights summaryJson={summaryJson} />
 
         {/* Missing values chart */}
-        <MissingData
-          missingColumns={missingValuesData}
-          // rowCount={rowCount}
-          // totalColumns={totalColumns}
-        />
+        <MissingData missingColumns={missingValuesData} />
 
         {/* Numeric columns charts */}
         <NumericalFields columnEntries={columnEntries} />

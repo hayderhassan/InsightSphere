@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, getAccessToken, API_BASE_URL } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import {
   Card,
   CardHeader,
@@ -16,17 +16,8 @@ import type { Dataset } from "@/types/dataset";
 import { DeleteDatasetButton } from "@/components/datasets/DeleteDatasetButton";
 import { DatasetTable } from "@/components/datasets/DatasetTable";
 
-type MeResponse = {
-  id: number;
-  username: string;
-  email: string;
-};
-
 export default function DashboardPage() {
   const router = useRouter();
-
-  const [me, setMe] = useState<MeResponse | null>(null);
-  const [loadingMe, setLoadingMe] = useState<boolean>(true);
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loadingDatasets, setLoadingDatasets] = useState<boolean>(true);
@@ -35,31 +26,17 @@ export default function DashboardPage() {
   const [bulkDeleting, setBulkDeleting] = useState<boolean>(false);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
-    async function loadMeAndDatasets(): Promise<void> {
+    async function load(): Promise<void> {
       try {
-        const [meData, datasetsData] = await Promise.all([
-          apiFetch("/auth/me/"),
-          apiFetch("/datasets/"),
-        ]);
-
-        setMe(meData as MeResponse);
-        setDatasets(datasetsData as Dataset[]);
-      } catch {
-        router.replace("/login");
+        const data = (await apiFetch("/datasets/")) as Dataset[];
+        setDatasets(data);
       } finally {
-        setLoadingMe(false);
         setLoadingDatasets(false);
       }
     }
 
-    loadMeAndDatasets();
-  }, [router]);
+    void load();
+  }, []);
 
   // Live status polling while any dataset is pending or running
   useEffect(() => {
@@ -114,26 +91,17 @@ export default function DashboardPage() {
   async function handleBulkDelete(): Promise<void> {
     if (selectedIds.length === 0) return;
 
-    const token = getAccessToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
     setBulkDeleting(true);
 
     try {
       await Promise.all(
         selectedIds.map(async (id) => {
-          const res = await fetch(`${API_BASE_URL}/datasets/${id}/`, {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-          if (!res.ok && res.status !== 204) {
-            console.error("Failed to delete dataset", id, res.status);
+          try {
+            await apiFetch(`/datasets/${id}/`, {
+              method: "DELETE",
+            });
+          } catch (error) {
+            console.error("Failed to delete dataset", id, error);
           }
         }),
       );
@@ -146,16 +114,6 @@ export default function DashboardPage() {
       setBulkDeleting(false);
     }
   }
-
-  if (loadingMe) {
-    return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading dashboard...</p>
-      </div>
-    );
-  }
-
-  if (!me) return null;
 
   const hasSelection = selectedIds.length > 0;
 
@@ -173,10 +131,6 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {me.username}
-              {me.email ? ` · ${me.email}` : ""}
-            </span>
             <Link href="/datasets/new">
               <Button size="sm" className="cursor-pointer">
                 Add new dataset

@@ -11,14 +11,7 @@ from rest_framework.response import Response
 
 from .models import AnalysisResult, Dataset
 from .serializers import DatasetSerializer
-from .tasks import run_analysis_task, run_semantic_aggregates_task, test_task
-
-
-def _load_dataset_dataframe(dataset: Dataset) -> pd.DataFrame:
-    """
-    Load the underlying CSV into a pandas DataFrame.
-    """
-    return pd.read_csv(dataset.original_file.path)
+from .tasks import run_analysis_task, test_task
 
 
 @api_view(["GET"])
@@ -79,6 +72,7 @@ def upload_dataset(request):
         status="PENDING",
     )
 
+    # Kick off async analysis
     run_analysis_task.delay(dataset.id)
 
     serializer = DatasetSerializer(dataset)
@@ -115,24 +109,13 @@ def get_dataset(request, dataset_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def update_semantic_config(request, dataset_id):
+def set_semantic_config(request, dataset_id):
     """
-    Save semantic config for a dataset and trigger semantic aggregates recomputation.
-
-
-    Expected JSON body:
-    {
-            "target_column": string | null,
-            "metric_columns": string[],
-            "time_column": string | null,
-            "column_types": { [colName]: logicalTypeString }
-    }
+    Persist semantic configuration and updated column types
+    into the analysis.summary_json for this dataset.
     """
     try:
-        dataset = Dataset.objects.get(
-            id=dataset_id,
-            owner=request.user,
-        )
+        dataset = Dataset.objects.get(id=dataset_id, owner=request.user)
     except Dataset.DoesNotExist:
         return Response(
             {"error": "Not found"},
@@ -143,157 +126,49 @@ def update_semantic_config(request, dataset_id):
         analysis = dataset.analysis
     except AnalysisResult.DoesNotExist:
         return Response(
-            {"error": "Analysis not found"},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    data = request.data or {}
-
-    target_column = data.get("target_column")
-    metric_columns = data.get("metric_columns") or []
-    time_column = data.get("time_column")
-    column_types = data.get("column_types") or {}
-
-    if not isinstance(metric_columns, list):
-        return Response(
-            {"error": "metric_columns must be a list"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if not isinstance(column_types, dict):
-        return Response(
-            {"error": "column_types must be an object"},
+            {"error": "No analysis result for this dataset"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     summary = analysis.summary_json or {}
+    columns = summary.get("columns") or {}
+
+    payload = request.data or {}
+
+    # Extract semantic config fields from payload
     semantic_config = {
-        "target_column": target_column,
-        "metric_columns": metric_columns,
-        "time_column": time_column,
-        "column_types": column_types,
+        "target_column": payload.get("target_column"),
+        "metric_columns": payload.get("metric_columns") or [],
+        "time_column": payload.get("time_column"),
+        "dataset_shape": payload.get("dataset_shape"),
+        "analysis_goal": payload.get("analysis_goal"),
+        "positive_class": payload.get("positive_class"),
+        "entity_key": payload.get("entity_key"),
+        "time_grain": payload.get("time_grain"),
+        "time_grain_custom": payload.get("time_grain_custom"),
+        "anomaly_direction": payload.get("anomaly_direction"),
+        "notes": payload.get("notes"),
     }
+
     summary["semantic_config"] = semantic_config
+
+    # Apply updated logical types to the per-column summaries
+    column_types = payload.get("column_types") or {}
+    if isinstance(column_types, dict):
+        for col_name, logical_type in column_types.items():
+            if col_name in columns and isinstance(columns[col_name], dict):
+                # Overwrite the stored type to reflect the user's choice
+                columns[col_name]["type"] = logical_type
+
+    summary["columns"] = columns
 
     analysis.summary_json = summary
     analysis.save()
 
-    # Trigger async recomputation of semantic aggregates
-    run_semantic_aggregates_task.delay(dataset.id)
-
     return Response(
         {
             "semantic_config": semantic_config,
+            "summary_json": summary,
         },
         status=status.HTTP_200_OK,
-    )
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def dataset_preview(request, dataset_id):
-    """
-    Return a lightweight preview of the dataset rows.
-    """
-    try:
-        dataset = Dataset.objects.get(
-            id=dataset_id,
-            owner=request.user,
-        )
-    except Dataset.DoesNotExist:
-        return Response(
-            {"error": "Not found"},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    try:
-        limit_param = request.query_params.get("limit", "100")
-        offset_param = request.query_params.get("offset", "0")
-        limit = max(1, min(int(limit_param), 500))
-        offset = max(0, int(offset_param))
-    except ValueError:
-        limit = 100
-        offset = 0
-
-    df = _load_dataset_dataframe(dataset)
-    total_rows = int(len(df))
-
-    if total_rows == 0:
-        return Response(
-            {
-                "columns": [],
-                "rows": [],
-                "total_rows": 0,
-            }
-        )
-
-    slice_df = df.iloc[offset : offset + limit]
-    columns = list(slice_df.columns)
-    rows = slice_df.where(pd.notnull(slice_df), None).to_dict(orient="records")
-
-    return Response(
-        {
-            "columns": columns,
-            "rows": rows,
-            "total_rows": total_rows,
-        }
-    )
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def dataset_quality_rows(request, dataset_id):
-    """
-    Return example rows that contain missing values in any column.
-    """
-    try:
-        dataset = Dataset.objects.get(
-            id=dataset_id,
-            owner=request.user,
-        )
-    except Dataset.DoesNotExist:
-        return Response(
-            {"error": "Not found"},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    try:
-        limit_param = request.query_params.get("limit", "50")
-        limit = max(1, min(int(limit_param), 200))
-    except ValueError:
-        limit = 50
-
-    df = _load_dataset_dataframe(dataset)
-    if df.empty:
-        return Response(
-            {
-                "columns": [],
-                "rows": [],
-                "total_rows_with_missing": 0,
-            }
-        )
-
-    mask_missing = df.isnull().any(axis=1)
-    missing_df = df[mask_missing]
-    total_missing_rows = int(len(missing_df))
-
-    if total_missing_rows == 0:
-        return Response(
-            {
-                "columns": list(df.columns),
-                "rows": [],
-                "total_rows_with_missing": 0,
-            }
-        )
-
-    slice_df = missing_df.iloc[:limit]
-    columns = list(slice_df.columns)
-    rows = slice_df.where(pd.notnull(slice_df), None).to_dict(orient="records")
-
-    return Response(
-        {
-            "columns": columns,
-            "rows": rows,
-            "total_rows_with_missing": total_missing_rows,
-        }
     )

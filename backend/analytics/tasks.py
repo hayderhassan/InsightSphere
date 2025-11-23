@@ -9,10 +9,111 @@ from pandas.api.types import (
     is_numeric_dtype,
 )
 
-from .models import AnalysisResult, Dataset
-from .semantic_utils import compute_semantic_aggregates
+from .models import AnalysisResult
 
 logger = logging.getLogger(__name__)
+
+
+def infer_column_type(series: pd.Series, name: str) -> str:
+    """
+    Infer a semantic column type with extra logic for:
+    - boolean-like numeric (0/1)
+    - boolean-like strings (true/false, yes/no, etc.)
+    - datetime in object columns via to_datetime sampling
+    """
+    try:
+        dtype_str = str(series.dtype)
+        logger.debug("Inferring type for column '%s' with dtype '%s'", name, dtype_str)
+
+        # 1) Explicit boolean dtype
+        if is_bool_dtype(series):
+            logger.debug("Column '%s' detected as boolean (native bool dtype)", name)
+            return "boolean"
+
+        # 2) Numeric with possible 0/1 boolean-like values
+        if is_numeric_dtype(series):
+            non_null = series.dropna()
+            unique_non_null = pd.unique(non_null)
+            # If only 0/1 (or subset), treat as boolean
+            if len(unique_non_null) <= 2:
+                try:
+                    normalized = {int(v) for v in unique_non_null if pd.notna(v)}
+                except Exception:
+                    normalized = set()
+                if normalized and normalized.issubset({0, 1}):
+                    logger.debug(
+                        "Column '%s' numeric but binary {0,1} -> treating as boolean",
+                        name,
+                    )
+                    return "boolean"
+            logger.debug("Column '%s' detected as numeric", name)
+            return "numeric"
+
+        # 3) Native datetime dtype
+        if is_datetime64_any_dtype(series):
+            logger.debug("Column '%s' detected as datetime (native datetime64)", name)
+            return "datetime"
+
+        # 4) Object-like: try boolean-like strings first
+        if series.dtype == "object":
+            sample = series.dropna()
+            if not sample.empty:
+                # Sample at most 50 distinct values
+                sample_unique = pd.Series(sample.unique())
+                if len(sample_unique) > 50:
+                    sample_unique = sample_unique.sample(50, random_state=0)
+
+                tokens = {str(v).strip().lower() for v in sample_unique}
+                bool_pairs = [
+                    {"true", "false"},
+                    {"yes", "no"},
+                    {"y", "n"},
+                    {"t", "f"},
+                    {"0", "1"},
+                ]
+                for pair in bool_pairs:
+                    if tokens.issubset(pair):
+                        logger.debug(
+                            "Column '%s' object but boolean-like strings %s -> boolean",
+                            name,
+                            pair,
+                        )
+                        return "boolean"
+
+            # 5) Try datetime coercion on object columns
+            if not sample.empty:
+                try:
+                    parsed = pd.to_datetime(
+                        sample, errors="coerce", utc=False, infer_datetime_format=True
+                    )
+                    non_null_ratio = float(parsed.notna().mean())
+                    logger.debug(
+                        "Column '%s' datetime coercion non-null ratio = %.3f",
+                        name,
+                        non_null_ratio,
+                    )
+                    if non_null_ratio >= 0.8:
+                        logger.debug(
+                            "Column '%s' treated as datetime (object -> datetime)",
+                            name,
+                        )
+                        return "datetime"
+                except Exception:
+                    logger.debug(
+                        "Column '%s' datetime coercion failed, leaving as categorical",
+                        name,
+                    )
+
+            logger.debug("Column '%s' treated as categorical (object)", name)
+            return "categorical"
+
+        # 6) Fallback: other dtypes
+        logger.debug("Column '%s' treated as 'other' (dtype=%s)", name, dtype_str)
+        return "other"
+
+    except Exception:
+        logger.exception("Failed to infer type for column '%s'", name)
+        return "other"
 
 
 @shared_task
@@ -25,14 +126,26 @@ def test_task(x, y):
 def run_analysis_task(dataset_id: int):
     analysis = AnalysisResult.objects.get(dataset_id=dataset_id)
     analysis.status = "RUNNING"
-    analysis.error_message = ""
     analysis.save()
 
     try:
         dataset = analysis.dataset
         file_path = dataset.original_file.path
 
+        logger.info(
+            "Starting analysis for dataset %s (id=%s, file='%s')",
+            dataset.name,
+            dataset_id,
+            file_path,
+        )
+
         df = pd.read_csv(file_path)
+        logger.debug(
+            "Loaded CSV for dataset %s into DataFrame with shape %s",
+            dataset_id,
+            df.shape,
+        )
+        logger.debug("DataFrame dtypes:\n%s", df.dtypes)
 
         result: dict = {
             "row_count": int(len(df)),
@@ -45,19 +158,8 @@ def run_analysis_task(dataset_id: int):
             series = df[col]
             col_summary: dict = {}
 
-            # Column type detection
-            try:
-                if is_numeric_dtype(series):
-                    col_type = "numeric"
-                elif is_bool_dtype(series):
-                    col_type = "boolean"
-                elif is_datetime64_any_dtype(series):
-                    col_type = "datetime"
-                else:
-                    col_type = "categorical" if series.dtype == "object" else "other"
-            except Exception:
-                col_type = "other"
-
+            # Column type detection with enhanced logic
+            col_type = infer_column_type(series, col)
             col_summary["type"] = col_type
 
             # Descriptive stats
@@ -68,6 +170,11 @@ def run_analysis_task(dataset_id: int):
                 else:
                     col_summary["describe"] = {}
             except Exception:
+                logger.exception(
+                    "Failed to compute describe() for column '%s' in dataset %s",
+                    col,
+                    dataset_id,
+                )
                 col_summary["describe"] = {}
 
             # Numeric histogram
@@ -79,7 +186,10 @@ def run_analysis_task(dataset_id: int):
                         bins_list = []
                         for interval, count in vc.items():
                             try:
-                                label = f"{float(interval.left):.2f}–{float(interval.right):.2f}"
+                                label = (
+                                    f"{float(interval.left):.2f}–"
+                                    f"{float(interval.right):.2f}"
+                                )
                             except Exception:
                                 label = str(interval)
                             bins_list.append(
@@ -90,8 +200,12 @@ def run_analysis_task(dataset_id: int):
                             )
                         col_summary["histogram"] = bins_list
                 except Exception:
-                    # If histogram fails, we just skip it
-                    pass
+                    logger.exception(
+                        "Failed to build histogram for numeric column '%s' "
+                        "in dataset %s",
+                        col,
+                        dataset_id,
+                    )
 
             # Categorical / boolean value counts
             if col_type in ("categorical", "boolean"):
@@ -101,65 +215,52 @@ def run_analysis_task(dataset_id: int):
                         {"value": idx, "count": int(count)} for idx, count in vc.items()
                     ]
                 except Exception:
-                    pass
+                    logger.exception(
+                        "Failed to build value_counts for column '%s' in dataset %s",
+                        col,
+                        dataset_id,
+                    )
 
             result["columns"][col] = col_summary
+            logger.debug(
+                "Column '%s' summary stored with type '%s' (keys=%s)",
+                col,
+                col_type,
+                list(col_summary.keys()),
+            )
 
-        # Preserve any existing semantic_config if present
-        existing_summary = analysis.summary_json or {}
-        semantic_config = existing_summary.get("semantic_config") or {}
+        # At this point, all columns have been processed
+        # Log a small, safe summary rather than full result.
+        type_counts: dict[str, int] = {}
+        for col_name, col_summary in result["columns"].items():
+            t = col_summary.get("type", "unknown")
+            type_counts[t] = type_counts.get(t, 0) + 1
 
-        if semantic_config:
-            try:
-                aggregates = compute_semantic_aggregates(df, semantic_config)
-                result["semantic_config"] = semantic_config
-                result["semantic_aggregates"] = aggregates
-            except Exception:
-                logger.exception(
-                    "Failed computing semantic aggregates during run_analysis_task"
-                )
+        logger.info(
+            "Completed column analysis for dataset %s: %s",
+            dataset_id,
+            type_counts,
+        )
+        logger.debug(
+            "Analysis result snapshot for dataset %s: row_count=%s, column_count=%s",
+            dataset_id,
+            result.get("row_count"),
+            result.get("column_count"),
+        )
 
         analysis.summary_json = result
         analysis.status = "COMPLETED"
-        analysis.error_message = ""
+        analysis.error_message = None
         analysis.save()
+
+        logger.info(
+            "Analysis task COMPLETED for dataset %s (id=%s)",
+            dataset.name,
+            dataset_id,
+        )
 
     except Exception:
         analysis.status = "FAILED"
         analysis.error_message = traceback.format_exc()
         analysis.save()
         logger.exception("Analysis task failed for dataset %s", dataset_id)
-
-
-@shared_task
-def run_semantic_aggregates_task(dataset_id: int):
-    """
-    Recompute semantic aggregates when the semantic config is updated.
-    """
-    try:
-        analysis = AnalysisResult.objects.get(dataset_id=dataset_id)
-        dataset = analysis.dataset
-        file_path = dataset.original_file.path
-
-        df = pd.read_csv(file_path)
-
-        summary = analysis.summary_json or {}
-        semantic_config = summary.get("semantic_config") or {}
-        if not semantic_config:
-            # Nothing to do
-            return
-
-        aggregates = compute_semantic_aggregates(df, semantic_config)
-        summary["semantic_aggregates"] = aggregates
-        analysis.summary_json = summary
-        analysis.save()
-    except AnalysisResult.DoesNotExist:
-        logger.warning(
-            "run_semantic_aggregates_task: AnalysisResult missing for dataset %s",
-            dataset_id,
-        )
-    except Exception:
-        logger.exception(
-            "run_semantic_aggregates_task failed for dataset %s",
-            dataset_id,
-        )

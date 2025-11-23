@@ -1,10 +1,21 @@
 import type { SummaryJson, ColumnSummary } from "@/types/analysis";
-import type { ColumnMeta, LogicalType } from "@/types/semantic";
+import { ColumnMeta, LogicalType, boolPairs } from "@/types/semantic";
 
 export interface SemanticCandidates {
   targetColumns: ColumnMeta[];
   metricColumns: ColumnMeta[];
   timeColumns: ColumnMeta[];
+}
+
+function normalizeToken(value: unknown): string {
+  return String(value).trim().toLowerCase();
+}
+
+function isBinaryBooleanLike(values: string[]): boolean {
+  const normalized = values.map((v) => v.trim().toLowerCase());
+  const set = new Set(normalized);
+  if (set.size !== 2) return false;
+  return boolPairs.some(([a, b]) => set.has(a) && set.has(b));
 }
 
 function looksLikeId(name: string): boolean {
@@ -40,20 +51,24 @@ function looksLikeTimeName(name: string): boolean {
   return timeKeywords.some((kw) => lower.includes(kw));
 }
 
-/**
- * Map backend column.type to a logical type.
- * No frontend inference: we only translate the backend's type
- * to our LogicalType union and add some lightweight ID/time hints.
- */
 export function deriveColumnMeta(name: string, col: ColumnSummary): ColumnMeta {
   const rawType = col.type ?? "other";
-
-  let logicalType: LogicalType;
+  let logicalType: LogicalType = "unknown";
   let isBinaryLike = false;
+
+  const valueCounts = col.value_counts ?? [];
+  const tokens = valueCounts.map((vc) => normalizeToken(vc.value));
+  const binaryLike = valueCounts.length > 0 && isBinaryBooleanLike(tokens);
 
   if (rawType === "boolean") {
     logicalType = "boolean";
-    isBinaryLike = true; // backend already decided it's boolean
+    isBinaryLike = true;
+  } else if (
+    binaryLike &&
+    (rawType === "numeric" || rawType === "categorical")
+  ) {
+    logicalType = "boolean";
+    isBinaryLike = true;
   } else if (rawType === "numeric") {
     logicalType = "numeric";
   } else if (rawType === "categorical") {
@@ -84,11 +99,6 @@ export function buildColumnsMeta(summary: SummaryJson | null): ColumnMeta[] {
   );
 }
 
-/**
- * Returns the effective logical type for a column:
- * - backend-provided logical type as default
- * - overridden by user choice if present
- */
 export function getEffectiveType(
   col: ColumnMeta,
   overrides: Record<string, LogicalType>,
@@ -103,8 +113,8 @@ export function buildSemanticCandidates(
   const targetColumns = columnsMeta.filter((col) => {
     if (col.isIdLike) return false;
     const effective = getEffectiveType(col, overrides);
-    // backend-driven: targets are typically boolean or categorical
     if (effective === "boolean") return true;
+    if (col.isBinaryLike) return true;
     if (effective === "categorical") return true;
     return false;
   });
@@ -134,9 +144,9 @@ export function getStageLabel(stage: string): string {
     case "uploading":
       return "Uploading CSV file...";
     case "processing":
-      return "Processing dataset and running backend analysis...";
+      return "Processing dataset and detecting columns...";
     case "done":
-      return "Upload complete. Review the backend column types and answer a few quick questions.";
+      return "Upload complete. Review the inferred column types and answer a few quick questions.";
     case "error":
       return "There was a problem uploading or processing your dataset.";
     case "idle":
