@@ -1,54 +1,11 @@
-// export type AnalysisStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-
-// export type ColumnType =
-//   | "numeric"
-//   | "categorical"
-//   | "boolean"
-//   | "datetime"
-//   | "other";
-
-// export interface HistogramBin {
-//   bin: string;
-//   count: number;
-// }
-
-// export interface ValueCount {
-//   value: string;
-//   count: number;
-// }
-
-// export interface ColumnSummary {
-//   type?: ColumnType;
-//   describe?: Record<string, number | string | null>;
-//   histogram?: HistogramBin[];
-//   value_counts?: ValueCount[];
-// }
-
-// export interface SummaryJson {
-//   row_count?: number;
-//   column_count?: number;
-//   missing_values?: Record<string, number>;
-//   columns?: Record<string, ColumnSummary>;
-// }
-
-// export interface AnalysisResult {
-//   status: AnalysisStatus;
-//   summary_json?: SummaryJson;
-//   created_at: string;
-//   error_message?: string | null;
-// }
-
-////
-//
-//
 export type AnalysisStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 
-export interface ColumnHistogramBin {
+export interface HistogramBin {
   bin: string;
   count: number;
 }
 
-export interface ColumnValueCount {
+export interface ValueCount {
   value: string;
   count: number;
 }
@@ -63,21 +20,47 @@ export interface ColumnSummary {
     | "ignored"
     | string;
   describe?: Record<string, unknown>;
-  histogram?: ColumnHistogramBin[];
-  value_counts?: ColumnValueCount[];
+  histogram?: HistogramBin[];
+  value_counts?: ValueCount[];
 }
 
-export interface SemanticConfigSummary {
+export interface SemanticConfig {
   target_column: string | null;
-  time_column: string | null;
   metric_columns: string[];
+  time_column: string | null;
   column_types: Record<string, string>;
+}
+
+export interface TargetDistributionRow {
+  target: string;
+  count: number;
+  pct: number;
+}
+
+export interface MetricByTargetRow {
+  target: string;
+  mean: number | null;
+  median?: number | null;
+  count: number;
+}
+
+export interface MetricOverTimeRow {
+  bucket: string;
+  mean: number | null;
+  count: number;
+}
+
+export interface SemanticAggregates {
+  target_distribution?: TargetDistributionRow[];
+  metrics_by_target?: Record<string, MetricByTargetRow[]>;
+  metrics_over_time?: Record<string, MetricOverTimeRow[]>;
 }
 
 export interface SummaryJson {
   row_count?: number;
   column_count?: number;
-  missing_values?: Record<string, number>;
   columns?: Record<string, ColumnSummary>;
-  semantic_config?: SemanticConfigSummary;
+  missing_values?: Record<string, number>;
+  semantic_config?: SemanticConfig | null;
+  semantic_aggregates?: SemanticAggregates | null;
 }

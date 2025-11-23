@@ -35,7 +35,6 @@ import { ColumnTypeReview } from "@/components/datasets/ColumnTypeReview";
 export default function NewDatasetPage() {
   const router = useRouter();
 
-  // Upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadName, setUploadName] = useState<string>("");
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -43,23 +42,19 @@ export default function NewDatasetPage() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Resulting dataset + summary
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [summary, setSummary] = useState<SummaryJson | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Type overrides
   const [typeOverrides, setTypeOverrides] = useState<
     Record<string, LogicalType>
   >({});
 
-  // Semantic questions state
   const [selectedTarget, setSelectedTarget] = useState<string>("");
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([]);
   const [selectedTimeColumn, setSelectedTimeColumn] = useState<string>("");
 
-  // Guard: must be authenticated
   useEffect(() => {
     const token = getAccessToken();
     if (!token) {
@@ -106,8 +101,6 @@ export default function NewDatasetPage() {
         return s;
       }
 
-      // Small backoff between attempts
-      // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
@@ -222,14 +215,14 @@ export default function NewDatasetPage() {
       return;
     }
 
-    const columnTypes: Record<string, LogicalType> = Object.fromEntries(
+    const columnTypes = Object.fromEntries(
       columnsMeta.map((col) => [col.name, getEffectiveType(col)]),
     );
 
     const payload = {
       target_column: selectedTarget || null,
-      time_column: selectedTimeColumn || null,
       metric_columns: selectedMetrics,
+      time_column: selectedTimeColumn || null,
       column_types: columnTypes,
     };
 
@@ -239,28 +232,22 @@ export default function NewDatasetPage() {
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
         },
       );
 
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        console.error("Failed to save semantic config:", text);
-        alert("Saving dataset settings failed. Please try again.");
-        return;
+        const text = await res.text();
+        console.error("Semantic config save error:", text);
       }
-
-      // At this point backend has queued re-analysis using the new config.
-      // The dataset page already polls for analysis, so charts will update
-      // once the Celery task completes.
-      router.push(`/datasets/${dataset.id}`);
-    } catch (err) {
-      console.error("Error saving semantic config:", err);
-      alert("Saving dataset settings failed due to a network error.");
+    } catch (error) {
+      console.error("Failed to save semantic config:", error);
     }
+
+    router.push(`/datasets/${dataset.id}`);
   }
 
   const showQuestions: boolean = uploadStage === "done" && dataset !== null;

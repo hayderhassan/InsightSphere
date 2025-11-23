@@ -9,9 +9,9 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import AnalysisResult, Dataset, DatasetSemanticConfig
-from .serializers import DatasetSemanticConfigSerializer, DatasetSerializer
-from .tasks import run_analysis_task, test_task
+from .models import AnalysisResult, Dataset
+from .serializers import DatasetSerializer
+from .tasks import run_analysis_task, run_semantic_aggregates_task, test_task
 
 
 def _load_dataset_dataframe(dataset: Dataset) -> pd.DataFrame:
@@ -28,7 +28,7 @@ def health_check(request):
 
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([AllowAny])  # dev-only
 def run_test_task(request):
     result = test_task.delay(2, 3)
     return Response({"task_id": result.id})
@@ -82,67 +82,111 @@ def upload_dataset(request):
     run_analysis_task.delay(dataset.id)
 
     serializer = DatasetSerializer(dataset)
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(
+        serializer.data,
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated])
-def get_dataset(request, dataset_id: int):
+def get_dataset(request, dataset_id):
     try:
-        dataset = Dataset.objects.get(id=dataset_id, owner=request.user)
+        dataset = Dataset.objects.get(
+            id=dataset_id,
+            owner=request.user,
+        )
     except Dataset.DoesNotExist:
-        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"error": "Not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
 
     if request.method == "GET":
         serializer = DatasetSerializer(dataset)
         return Response(serializer.data)
 
+    # DELETE
     if dataset.original_file:
         dataset.original_file.delete(save=False)
-
     dataset.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@api_view(["GET", "POST"])
+@api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def dataset_semantic_config(request, dataset_id: int):
+def update_semantic_config(request, dataset_id):
+    """
+    Save semantic config for a dataset and trigger semantic aggregates recomputation.
+
+
+    Expected JSON body:
+    {
+            "target_column": string | null,
+            "metric_columns": string[],
+            "time_column": string | null,
+            "column_types": { [colName]: logicalTypeString }
+    }
+    """
     try:
-        dataset = Dataset.objects.get(id=dataset_id, owner=request.user)
-    except Dataset.DoesNotExist:
-        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    if request.method == "GET":
-        config = DatasetSemanticConfig.objects.filter(dataset=dataset).first()
-        if not config:
-            return Response(
-                {
-                    "target_column": None,
-                    "time_column": None,
-                    "metric_columns": [],
-                    "column_types": {},
-                }
-            )
-        serializer = DatasetSemanticConfigSerializer(config)
-        return Response(serializer.data)
-
-    existing = DatasetSemanticConfig.objects.filter(dataset=dataset).first()
-
-    if existing:
-        serializer = DatasetSemanticConfigSerializer(
-            existing, data=request.data, partial=True
+        dataset = Dataset.objects.get(
+            id=dataset_id,
+            owner=request.user,
         )
-    else:
-        serializer = DatasetSemanticConfigSerializer(data=request.data)
+    except Dataset.DoesNotExist:
+        return Response(
+            {"error": "Not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
 
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        analysis = dataset.analysis
+    except AnalysisResult.DoesNotExist:
+        return Response(
+            {"error": "Analysis not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
 
-    config = serializer.save(dataset=dataset)
+    data = request.data or {}
 
-    run_analysis_task.delay(dataset.id)
+    target_column = data.get("target_column")
+    metric_columns = data.get("metric_columns") or []
+    time_column = data.get("time_column")
+    column_types = data.get("column_types") or {}
 
-    return Response(DatasetSemanticConfigSerializer(config).data)
+    if not isinstance(metric_columns, list):
+        return Response(
+            {"error": "metric_columns must be a list"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not isinstance(column_types, dict):
+        return Response(
+            {"error": "column_types must be an object"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    summary = analysis.summary_json or {}
+    semantic_config = {
+        "target_column": target_column,
+        "metric_columns": metric_columns,
+        "time_column": time_column,
+        "column_types": column_types,
+    }
+    summary["semantic_config"] = semantic_config
+
+    analysis.summary_json = summary
+    analysis.save()
+
+    # Trigger async recomputation of semantic aggregates
+    run_semantic_aggregates_task.delay(dataset.id)
+
+    return Response(
+        {
+            "semantic_config": semantic_config,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["GET"])

@@ -5,14 +5,12 @@ import { LOGICAL_TYPE_LABELS, LOGICAL_TYPE_OPTIONS } from "@/types/semantic";
 
 interface ColumnTypeReviewProps {
   columnsMeta: ColumnMeta[];
-  typeOverrides: Record<string, LogicalType>;
   onTypeOverrideChange: (columnName: string, value: LogicalType) => void;
   getEffectiveType: (col: ColumnMeta) => LogicalType;
 }
 
 export function ColumnTypeReview(props: ColumnTypeReviewProps) {
-  const { columnsMeta, typeOverrides, onTypeOverrideChange, getEffectiveType } =
-    props;
+  const { columnsMeta, onTypeOverrideChange, getEffectiveType } = props;
 
   if (columnsMeta.length === 0) {
     return (

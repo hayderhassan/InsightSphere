@@ -12,10 +12,15 @@ urlpatterns = [
     path("datasets/", views.list_datasets, name="list-datasets"),
     path("datasets/upload/", views.upload_dataset, name="upload-dataset"),
     path("datasets/<int:dataset_id>/", views.get_dataset, name="get-dataset"),
+    # path(
+    #     "datasets/<int:dataset_id>/semantic-config/",
+    #     views.dataset_semantic_config,
+    #     name="dataset-semantic-config",
+    # ),
     path(
         "datasets/<int:dataset_id>/semantic-config/",
-        views.dataset_semantic_config,
-        name="dataset-semantic-config",
+        views.update_semantic_config,
+        name="update-semantic-config",
     ),
     path(
         "datasets/<int:dataset_id>/preview/",
