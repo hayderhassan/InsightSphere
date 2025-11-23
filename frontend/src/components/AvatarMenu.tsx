@@ -11,12 +11,12 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { LogOut } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 type AvatarMenuSize = "desktop" | "mobile";
 
 interface AvatarMenuProps {
   username: string;
-  onLogout: () => void;
   size?: AvatarMenuSize;
 }
 
@@ -34,11 +34,8 @@ function getInitials(username: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export function AvatarMenu({
-  username,
-  onLogout,
-  size = "desktop",
-}: AvatarMenuProps) {
+export function AvatarMenu({ username, size = "desktop" }: AvatarMenuProps) {
+  const { logout } = useAuth();
   const initials = getInitials(username);
 
   const buttonBase =
@@ -74,7 +71,7 @@ export function AvatarMenu({
         <DropdownMenuSeparator className="bg-slate-700" />
         <DropdownMenuItem
           className="cursor-pointer text-xs text-red-400 focus:bg-red-950/40 focus:text-red-400"
-          onClick={onLogout}
+          onClick={logout}
         >
           <LogOut className="mr-2 h-3 w-3" />
           Log out
@@ -83,63 +80,3 @@ export function AvatarMenu({
     </DropdownMenu>
   );
 }
-
-//
-// "use client";
-
-// import { Button } from "@/components/ui/button";
-// import {
-//   DropdownMenu,
-//   DropdownMenuTrigger,
-//   DropdownMenuContent,
-//   DropdownMenuLabel,
-//   DropdownMenuSeparator,
-//   DropdownMenuItem,
-// } from "@/components/ui/dropdown-menu";
-// import { CircleUser, LogOut } from "lucide-react";
-
-// interface AvatarMenuProps {
-//   userName: string;
-//   onLogout: () => void;
-//   size?: "sm" | "default";
-//   truncateWidth?: string;
-//   menuWidth?: string;
-// }
-
-// export function AvatarMenu({
-//   userName,
-//   onLogout,
-//   size = "sm",
-//   truncateWidth = "max-w-[140px]",
-//   menuWidth = "w-64",
-// }: AvatarMenuProps) {
-//   return (
-//     <DropdownMenu>
-//       <DropdownMenuTrigger asChild>
-//         <Button
-//           variant="ghost"
-//           size={size}
-//           className="flex items-center gap-2 rounded-full border border-white bg-primary/10 text-primary-foreground hover:bg-primary/20"
-//         >
-//           <CircleUser className="h-4 w-4" />
-//           <span className={`${truncateWidth} truncate text-xs sm:text-sm`}>
-//             {userName}
-//           </span>
-//         </Button>
-//       </DropdownMenuTrigger>
-//       <DropdownMenuContent align="end" className={menuWidth}>
-//         <DropdownMenuLabel className="text-xs">
-//           <div className="font-medium truncate">{userName}</div>
-//         </DropdownMenuLabel>
-//         <DropdownMenuSeparator />
-//         <DropdownMenuItem
-//           className="text-xs text-red-600 focus:text-red-700"
-//           onClick={onLogout}
-//         >
-//           <LogOut className="mr-2 h-3 w-3" />
-//           Log out
-//         </DropdownMenuItem>
-//       </DropdownMenuContent>
-//     </DropdownMenu>
-//   );
-// }

@@ -1,35 +1,53 @@
-export const API_BASE_URL = "http://localhost:8000/api";
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/lib/token";
 
-export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("accessToken");
-}
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
-export function setAccessToken(token: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("accessToken", token);
-}
-
-export async function apiFetch(path: string, options: RequestInit = {}) {
+export async function apiFetch<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
   const token = getAccessToken();
 
   const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
+    Accept: "application/json",
+    ...(options.headers ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
   });
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+  if (res.status === 401) {
+    clearAccessToken();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("auth:unauthorised"));
+    }
   }
 
-  return res.json();
+  if (res.status === 204) {
+    // No content
+    return null as T;
+  }
+
+  const text = await res.text();
+  let payload: unknown;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = text;
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      `API error ${res.status} ${res.statusText}: ${JSON.stringify(payload)}`,
+    );
+  }
+
+  return payload as T;
 }
+
+// Re-export for backwards compatibility
+export { getAccessToken, setAccessToken, clearAccessToken };
