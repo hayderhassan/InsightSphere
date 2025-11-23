@@ -34,6 +34,12 @@ export type AnalysisGoal =
   | "trend"
   | "anomaly";
 
+export interface TargetDisplayConfig {
+  kind: "boolean";
+  positive_label: string;
+  negative_label: string;
+}
+
 export type TimeGrain = "auto" | "day" | "week" | "month" | "quarter" | "year";
 
 export type AnomalyDirection = "high" | "low" | "both";
@@ -46,6 +52,7 @@ export interface SemanticConfig {
   dataset_shape?: DatasetShape;
   analysis_goal?: AnalysisGoal;
   positive_class?: string | null;
+  target_display?: TargetDisplayConfig;
   time_grain?: TimeGrain;
   anomaly_direction?: AnomalyDirection;
   primary_entity_key?: string | null;

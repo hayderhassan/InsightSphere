@@ -45,7 +45,7 @@ urlpatterns = [
     path("datasets/<int:dataset_id>/", views.get_dataset, name="analytics-get-dataset"),
     path(
         "datasets/<int:dataset_id>/semantic-config/",
-        views.set_semantic_config,
-        name="analytics-set-semantic-config",
+        views.update_semantic_config,
+        name="analytics-update-semantic-config",
     ),
 ]

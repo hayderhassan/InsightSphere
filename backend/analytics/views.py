@@ -1,4 +1,6 @@
-import pandas as pd
+import logging
+
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
@@ -12,6 +14,9 @@ from rest_framework.response import Response
 from .models import AnalysisResult, Dataset
 from .serializers import DatasetSerializer
 from .tasks import run_analysis_task, test_task
+from .utils import build_boolean_labels
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
@@ -43,7 +48,9 @@ def me(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_datasets(request):
-    datasets = Dataset.objects.filter(owner=request.user).order_by("-uploaded_at")
+    datasets = Dataset.objects.filter(owner=request.user).order_by(
+        "-uploaded_at",
+    )
     serializer = DatasetSerializer(datasets, many=True)
     return Response(serializer.data)
 
@@ -72,7 +79,6 @@ def upload_dataset(request):
         status="PENDING",
     )
 
-    # Kick off async analysis
     run_analysis_task.delay(dataset.id)
 
     serializer = DatasetSerializer(dataset)
@@ -109,66 +115,93 @@ def get_dataset(request, dataset_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def set_semantic_config(request, dataset_id):
+def update_semantic_config(request, dataset_id):
     """
-    Persist semantic configuration and updated column types
-    into the analysis.summary_json for this dataset.
-    """
-    try:
-        dataset = Dataset.objects.get(id=dataset_id, owner=request.user)
-    except Dataset.DoesNotExist:
-        return Response(
-            {"error": "Not found"},
-            status=status.HTTP_404_NOT_FOUND,
-        )
+    Update semantic configuration for a dataset and enrich it
+    with human-friendly labels for boolean targets.
 
-    try:
-        analysis = dataset.analysis
-    except AnalysisResult.DoesNotExist:
+
+    Expected JSON payload:
+    {
+            "target_column": string | null,
+            "metric_columns": string[],
+            "time_column": string | null,
+            "column_types": { [columnName: string]: string }
+    }
+    """
+    dataset = get_object_or_404(
+        Dataset,
+        id=dataset_id,
+        owner=request.user,
+    )
+
+    analysis = getattr(dataset, "analysis", None)
+    if analysis is None:
         return Response(
-            {"error": "No analysis result for this dataset"},
+            {"error": "No analysis result for this dataset."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     summary = analysis.summary_json or {}
     columns = summary.get("columns") or {}
 
-    payload = request.data or {}
+    data = request.data
+    target_column = data.get("target_column")
+    metric_columns = data.get("metric_columns") or []
+    time_column = data.get("time_column")
+    column_types = data.get("column_types") or {}
 
-    # Extract semantic config fields from payload
-    semantic_config = {
-        "target_column": payload.get("target_column"),
-        "metric_columns": payload.get("metric_columns") or [],
-        "time_column": payload.get("time_column"),
-        "dataset_shape": payload.get("dataset_shape"),
-        "analysis_goal": payload.get("analysis_goal"),
-        "positive_class": payload.get("positive_class"),
-        "entity_key": payload.get("entity_key"),
-        "time_grain": payload.get("time_grain"),
-        "time_grain_custom": payload.get("time_grain_custom"),
-        "anomaly_direction": payload.get("anomaly_direction"),
-        "notes": payload.get("notes"),
-    }
+    if not isinstance(metric_columns, list):
+        return Response(
+            {"error": "metric_columns must be a list."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not isinstance(column_types, dict):
+        return Response(
+            {"error": "column_types must be an object."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    semantic_config = summary.get("semantic_config") or {}
+    semantic_config.update(
+        {
+            "target_column": target_column,
+            "metric_columns": metric_columns,
+            "time_column": time_column,
+            "column_types": column_types,
+        },
+    )
+
+    target_display = None
+
+    if target_column:
+        col_summary = columns.get(target_column) or {}
+        raw_type = col_summary.get("type")
+        logical_type = column_types.get(target_column)
+
+        is_boolean = logical_type == "boolean" or raw_type == "boolean"
+
+        if is_boolean:
+            labels = build_boolean_labels(target_column)
+            target_display = {
+                "kind": "boolean",
+                "positive_label": labels["positive_label"],
+                "negative_label": labels["negative_label"],
+            }
+
+    if target_display is not None:
+        semantic_config["target_display"] = target_display
 
     summary["semantic_config"] = semantic_config
-
-    # Apply updated logical types to the per-column summaries
-    column_types = payload.get("column_types") or {}
-    if isinstance(column_types, dict):
-        for col_name, logical_type in column_types.items():
-            if col_name in columns and isinstance(columns[col_name], dict):
-                # Overwrite the stored type to reflect the user's choice
-                columns[col_name]["type"] = logical_type
-
-    summary["columns"] = columns
-
     analysis.summary_json = summary
-    analysis.save()
+    analysis.save(update_fields=["summary_json"])
 
-    return Response(
-        {
-            "semantic_config": semantic_config,
-            "summary_json": summary,
-        },
-        status=status.HTTP_200_OK,
+    logger.info(
+        "Updated semantic_config for dataset %s: %s",
+        dataset_id,
+        semantic_config,
     )
+
+    serializer = DatasetSerializer(dataset)
+    return Response(serializer.data)
